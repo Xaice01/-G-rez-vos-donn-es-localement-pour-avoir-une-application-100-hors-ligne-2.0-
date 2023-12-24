@@ -1,21 +1,45 @@
 package com.openclassrooms.savemytrip.tripbook;
 
 
+import static android.Manifest.permission.WRITE_EXTERNAL_STORAGE;
+
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.CompoundButton;
+import android.widget.Toast;
 
 import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 
 import com.openclassrooms.savemytrip.R;
 import com.openclassrooms.savemytrip.databinding.ActivityTripBookBinding;
+import com.openclassrooms.savemytrip.utils.StorageUtils;
+
+import java.io.File;
 
 public class TripBookActivity extends AppCompatActivity {
     private ActivityTripBookBinding binding;
+
+    //1.4 define the autority of FileProvider
+    private static final String AUTHORITY="com.openclassrooms.savemytrip.fileprovider";
+
+    //1 -File Purpose
+    private static final String FILENAME = "tripBook.txt";
+    private static final String FOLDERNAME = "bookTrip";
+
+    // 1.1 - PERMISSION PURPOSE
+
+    private static final int RC_STORAGE_WRITE_PERMS = 100;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -24,6 +48,7 @@ public class TripBookActivity extends AppCompatActivity {
         setContentView(binding.getRoot());
 
         initView();
+        readFromStorage();
     }
 
     // -------------------
@@ -47,6 +72,7 @@ public class TripBookActivity extends AppCompatActivity {
                     binding.tripBookActivityInternalChoice.setVisibility(View.GONE);
                 }
             }
+            readFromStorage();
         };
         binding.tripBookActivityRadioInternal.setOnCheckedChangeListener(checkedChangeListener);
         binding.tripBookActivityRadioExternal.setOnCheckedChangeListener(checkedChangeListener);
@@ -67,12 +93,184 @@ public class TripBookActivity extends AppCompatActivity {
     public boolean onOptionsItemSelected(MenuItem item) {
         int itemId = item.getItemId();
         if (itemId == R.id.action_share) {
-            /*TODO*/
+            shareFile();
             return true;
         } else if (itemId == R.id.action_save) {
-            /*TODO*/
+            save();
             return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    // ----------------------------------
+
+// SHARE FILE
+
+// ----------------------------------
+
+// 2.4 - Share the internal file
+
+    private void shareFile(){
+
+        File internalFile = StorageUtils.getFileFromStorage(getFilesDir(),this, FILENAME, FOLDERNAME);
+
+        Uri contentUri = FileProvider.getUriForFile(getApplicationContext(), AUTHORITY, internalFile);
+
+        Intent sharingIntent = new Intent(Intent.ACTION_SEND);
+
+        sharingIntent.setType("text/*");
+        sharingIntent.putExtra(Intent.EXTRA_STREAM, contentUri);
+
+
+        startActivity(Intent.createChooser(sharingIntent, getString(R.string.trip_book_share)));
+
+    }
+
+    // --------------------
+
+    // ACTIONS
+
+    // --------------------
+
+    // 4 - Save after user clicked on button
+
+    private void save() {
+
+        if (binding.tripBookActivityRadioExternal.isChecked()) {
+
+            this.writeOnExternalStorage(); //Save on external storage
+
+        } else {
+
+            //3.2 Save on internalStorage
+            writeOnInternalStorage();
+        }
+    }
+    // ----------------------------------
+    // UTILS - STORAGE
+    // ----------------------------------
+
+    @Override
+
+    // 2 - After permission granted or refused
+
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == RC_STORAGE_WRITE_PERMS) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                readFromStorage();
+            }
+        }
+    }
+
+    private boolean checkWriteExternalStoragePermission() {
+
+        if (ContextCompat.checkSelfPermission(this, WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+
+            ActivityCompat.requestPermissions(this,
+
+                    new String[]{WRITE_EXTERNAL_STORAGE},
+
+                    RC_STORAGE_WRITE_PERMS);
+
+            return true;
+
+        }
+
+        return false;
+
+    }
+
+    // 2 - Read from storage
+
+    private void readFromStorage() {
+        if (checkWriteExternalStoragePermission()) return;
+        if (binding.tripBookActivityRadioExternal.isChecked()) {
+
+            if (StorageUtils.isExternalStorageReadable()) {
+
+                File directory;
+
+                // EXTERNAL
+
+                if (binding.tripBookActivityRadioPublic.isChecked()) {
+
+                    // External - Public
+                    directory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
+                } else {
+
+                    // External - Private
+                    directory = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
+                }
+                binding.tripBookActivityEditText.setText(StorageUtils.getTextFromStorage(directory, this, FILENAME, FOLDERNAME));
+            }
+
+        } else {
+
+            // 2.3 - Read from internal storage
+
+            // INTERNAL
+
+            File directory;
+
+            if (binding.tripBookActivityRadioVolatile.isChecked()) {
+
+                // Cache
+
+                directory = getCacheDir();
+
+            } else {
+
+                // Normal
+
+                directory = getFilesDir();
+
+            }
+
+            binding.tripBookActivityEditText.setText(StorageUtils.getTextFromStorage(directory, this, FILENAME, FOLDERNAME));
+
+        }
+    }
+
+    // 3 - Write on external storage
+
+
+    private void writeOnExternalStorage() {
+
+        if (StorageUtils.isExternalStorageWritable()) {
+
+            File directory;
+
+            if (binding.tripBookActivityRadioPublic.isChecked()) {
+
+                directory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
+
+            } else {
+
+                directory = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
+
+            }
+
+            StorageUtils.setTextInStorage(directory, this, FILENAME, FOLDERNAME, binding.tripBookActivityEditText.getText().toString());
+
+        } else {
+
+            Toast.makeText(this, getString(R.string.external_storage_impossible_create_file), Toast.LENGTH_LONG).show();
+
+        }
+    }
+
+    // 1.3 Write on internal storage
+
+    private void writeOnInternalStorage() {
+
+        File directory;
+
+        if (binding.tripBookActivityRadioVolatile.isChecked()) {
+            directory = getCacheDir();
+        } else {
+            directory = getFilesDir();
+        }
+        StorageUtils.setTextInStorage(directory, this, FILENAME, FOLDERNAME, binding.tripBookActivityEditText.getText().toString());
     }
 }
